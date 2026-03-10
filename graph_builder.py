@@ -69,26 +69,18 @@ def history_to_action_feat(history_entry: Dict[str, Any]) -> List[float]:
 
 ### graph structure
 
-def build_edges(T: int) -> List[Tuple[int, int]]:
-    """
-    Node indexing:
-      S_t = t                for t in [0..T-1]
-      A_t = T + t            for t in [0..T-1]
-      total nodes = 2T
+def build_edges(T: int) -> list[tuple[int, int]]:
+    edges: list[tuple[int, int]] = []
 
-    Edges:
-      S_t -> A_t             for t in [0..T-1]
-      A_t -> A_{t+1}         for t in [0..T-2]
-    """
-    edges: List[Tuple[int, int]] = []
+    # node ids:
+    # states: 0..T-1
+    # actions: T..2T-1
 
-    # state -> action
     for t in range(T):
         S_t = t
         A_t = T + t
         edges.append((S_t, A_t))
 
-    # action -> next action (temporal)
     for t in range(T - 1):
         A_t = T + t
         A_next = T + t + 1
@@ -144,9 +136,7 @@ def build_graph_from_episode(episode):
     return {"T": T, "num_nodes": num_nodes, "node_types": node_types, "action_mask": action_mask, "x_list": x_list, "y_list": y_list, "edges": edges}
 
 def build_pyg_graph_from_episode(episode):
-    """
-    Converts plain Python graph dict into PyTorch Geometric Data object.
-    """
+    
 
     graph_dict = build_graph_from_episode(episode)
 
@@ -155,13 +145,13 @@ def build_pyg_graph_from_episode(episode):
     edges = graph_dict["edges"]
     action_mask_list = graph_dict["action_mask"]
 
-    # ---- Convert to tensors ----
+    # tensor creation
     x = torch.tensor(x_list, dtype=torch.float32)
     y = torch.tensor(y_list, dtype=torch.long)
     edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
     action_mask = torch.tensor(action_mask_list, dtype=torch.bool)
 
-    # ---- Create PyG Data object ----
+    # pyg data object
     data = Data(x=x, edge_index=edge_index, y=y)
     data.action_mask = action_mask
 
@@ -213,10 +203,14 @@ def visualize_graph(graph_dict):
 
 if __name__ == "__main__":
     ep = load_episode(0)
+
     graph_dict = build_graph_from_episode(ep)
 
-    print("T =", graph_dict["T"])
-    print("Nodes =", graph_dict["num_nodes"])
-    print("Edges =", len(graph_dict["edges"]))
+    data = build_pyg_graph_from_episode(ep)
 
-    visualize_graph(graph_dict)
+    print("Nodes:", data.x.shape[0])
+    print("Edges:", data.edge_index.shape[1])
+    print("Feature shape:", data.x.shape)
+    print("Labels shape:", data.y.shape)
+
+    #visualize_graph(graph_dict)
