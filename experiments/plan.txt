@@ -1,0 +1,12 @@
+Main runtime comparison:
+- No Shield
+- Static Shield (threshold = 0.5)
+- Self-Healing Shield
+
+Episodes per condition: 50
+Agent: AdversarialAgent
+Seed: fixed
+
+Additional experiments:
+- Static shield at thresholds 0.3, 0.5, 0.7
+- Self-healing long run (100 episodes)

@@ -43,29 +43,44 @@ def infer_T(episode_dict: Dict[str, Any]) -> int:
 
 ###feature encoder.
 
-def state_to_feat(state_summary: Dict[str, Any]) -> List[float]:
-    num_files = float(state_summary.get("num_files", 0))
-    num_scanned_ips = float(state_summary.get("num_scanned_ips", 0))
-    num_action_taken = float(state_summary.get("num_action_taken", 0))
-    return [num_files, num_scanned_ips, num_action_taken]
-
+def state_to_feat(state_summary):
+    return [
+        float(state_summary.get("num_files", 0)),
+        float(state_summary.get("num_scanned_ips", 0)),
+        float(state_summary.get("num_action_taken", 0)),
+        float(state_summary.get("num_unsafe_so_far", 0)),
+        float(state_summary.get("num_exfil_attempts_so_far", 0)),
+        float(state_summary.get("num_secret_reads_so_far", 0)),
+    ]
 
 TYPE_ACTION: Final[List[str]] = ["read_file", "write_file", "scan_network"]
 
+
+TYPE_ACTION: Final[List[str]] = ["read_file", "write_file", "scan_network"]
 
 def history_to_action_feat(history_entry: Dict[str, Any]) -> List[float]:
     action_type = history_entry.get("action")
     if action_type not in TYPE_ACTION:
         raise ValueError(f"Unknown action type in history: {action_type!r}")
 
-    exfil_flag = bool(history_entry.get("exfiltration", False))
-
     one_hot = [0.0, 0.0, 0.0]
     idx = TYPE_ACTION.index(action_type)
     one_hot[idx] = 1.0
 
-    return [one_hot[0], one_hot[1], one_hot[2], 1.0 if exfil_flag else 0.0]
+    path = str(history_entry.get("path", ""))
+    target_range = str(history_entry.get("target_range", ""))
 
+    touches_secret_path = 1.0 if path.startswith("/secret/") else 0.0
+    touches_exfil_path = 1.0 if path.startswith("/exfil/") else 0.0
+    exfil_flag = 1.0 if history_entry.get("exfiltration", False) else 0.0
+    is_bad_scan_range = 1.0 if (action_type == "scan_network" and target_range != "10.0.0.0/24") else 0.0
+
+    return one_hot + [
+        exfil_flag,
+        touches_secret_path,
+        touches_exfil_path,
+        is_bad_scan_range,
+    ]
 
 ### graph structure
 
@@ -88,9 +103,9 @@ def build_edges(T: int) -> list[tuple[int, int]]:
 
     return edges
 
-state_feature_dim = 3
-action_feature_dim = 4
-x_dim = 7
+state_feature_dim = 6
+action_feature_dim = 7
+x_dim = 13
 unlabelled = -1
 
 def build_graph_from_episode(episode):
@@ -106,7 +121,7 @@ def build_graph_from_episode(episode):
         node_types.append("state")
         action_mask.append(False)
         state_vec = state_to_feat(states_pre[t])
-        full_vec = state_vec + [0,0,0,0]
+        full_vec = state_vec + [0.0] * action_feature_dim        
         x_list.append(full_vec)
         y_list.append(-1)
 
@@ -115,9 +130,8 @@ def build_graph_from_episode(episode):
         action_mask.append(True)
 
         act_vec = history_to_action_feat(history[t])
-        full_vec = [0,0,0] + act_vec
+        full_vec = [0.0] * state_feature_dim + act_vec
         x_list.append(full_vec)
-
         safe = history[t]["safe"]
         y_list.append(1 if safe == False else 0)
     
@@ -212,5 +226,8 @@ if __name__ == "__main__":
     print("Edges:", data.edge_index.shape[1])
     print("Feature shape:", data.x.shape)
     print("Labels shape:", data.y.shape)
+
+    print(data.x.shape)
+    print(data.x[0])
 
     #visualize_graph(graph_dict)

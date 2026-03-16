@@ -1,10 +1,8 @@
 from __future__ import annotations
-
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, List, Literal
 import random
-
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
@@ -12,14 +10,12 @@ from torch_geometric.data import Data
 OutcomeType = Literal["tp", "fp", "tn", "fn"]
 
 DEFAULT_THRESHOLD = 0.50
-MIN_THRESHOLD = 0.10
+MIN_THRESHOLD = 0.25
 MAX_THRESHOLD = 0.90
-THRESHOLD_STEP = 0.05
-
-RECENT_WINDOW_SIZE = 20
-TARGET_FP_RATE = 0.20
+THRESHOLD_STEP = 0.01
+RECENT_WINDOW_SIZE = 50
+TARGET_FP_RATE = 0.15
 TARGET_FN_RATE = 0.10
-
 MISTAKE_BUFFER_SIZE = 100
 RETRAIN_TRIGGER = 10
 RETRAIN_STEPS = 3
@@ -128,7 +124,7 @@ def record_runtime_outcome(
 
     if outcome in ("fp", "fn"):
         true_label = 0 if ground_truth_safe else 1
-        # Store a CPU copy so the buffer stays lightweight and device-agnostic.
+        # Store CPU copy so the buffer stays lightweight and device-agnostic.
         stored_graph = graph.cpu()
         healing_state.mistake_buffer.append(
             MistakeExample(

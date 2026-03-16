@@ -12,6 +12,9 @@ from self_healing import (
     maybe_fine_tune_on_mistakes,
 )
 
+from pathlib import Path
+import json
+
 import torch
 import torch.nn.functional as F
 
@@ -23,8 +26,8 @@ from graph_builder import build_pyg_graph_from_episode
 MODEL_PATH = "safety_gcn.pt"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-IN_CHANNELS = 7
-HIDDEN_CHANNELS = 32
+IN_CHANNELS = 13
+HIDDEN_CHANNELS = 64
 MAX_STEPS = 10
 
 def init_runtime_trace() -> Dict[str, List[Dict[str, Any]]]:
@@ -361,7 +364,7 @@ def aggregate_summaries(summaries: List[Dict[str, float]]) -> Dict[str, float]:
 
 def run_experiment(
     agent_cls: Type[Any],
-    n_episodes: int = 20,
+    n_episodes: int = 50,
     max_steps: int = MAX_STEPS,
     use_shield: bool = True,
     use_self_healing: bool = True,
@@ -370,11 +373,16 @@ def run_experiment(
     model_path: str = MODEL_PATH,
     device: torch.device = DEVICE,
 ) -> Dict[str, Any]:
+    
+
     model = load_trained_model(model_path=model_path, device=device)
     healing_state = init_healing_state(initial_threshold=initial_threshold)
 
     all_logs: List[List[Dict[str, Any]]] = []
     summaries: List[Dict[str, float]] = []
+
+    threshold_history: List[float | None] = []
+
 
     for episode_idx in range(n_episodes):
         env = SandboxEnv()
@@ -401,6 +409,7 @@ def run_experiment(
         summary = summarize_runtime_log(runtime_log)
         summaries.append(summary)
         all_logs.append(runtime_log)
+        threshold_history.append(healing_state.threshold if use_shield else None)
 
     aggregate = aggregate_summaries(summaries)
 
@@ -414,9 +423,9 @@ def run_experiment(
         "aggregate_metrics": aggregate,
         "healing_state": healing_state if use_shield else None,
         "logs": all_logs,
+        "threshold_history": threshold_history,
     }
     return result
-
 
 def print_experiment_result(result: Dict[str, Any]) -> None:
     print("\n" + "=" * 72)
@@ -434,23 +443,37 @@ def print_experiment_result(result: Dict[str, Any]) -> None:
         print(f"{key}: {value:.4f}")
     print("=" * 72)
 
+def save_experiment_result(result: Dict[str, Any], output_path: str) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
 def main() -> None:
-    # Baseline: no shield
+    print("Starting runtime shield experiment suite...")
+
+    # ------------------------------------------------------------------
+    # Experiment A: Main comparison
+    # ------------------------------------------------------------------
+    # 1) No Shield
     no_shield_result = run_experiment(
         agent_cls=AdversarialAgent,
-        n_episodes=10,
+        n_episodes=50,
         max_steps=MAX_STEPS,
         use_shield=False,
         use_self_healing=False,
         use_threshold_adaptation=False,
     )
     print_experiment_result(no_shield_result)
+    save_experiment_result(
+        no_shield_result,
+        "experiments/raw_outputs/no_shield.json",
+    )
 
-    # Static shield: fixed threshold, no adaptation
+    # 2) Static Shield (default threshold)
     static_shield_result = run_experiment(
         agent_cls=AdversarialAgent,
-        n_episodes=10,
+        n_episodes=50,
         max_steps=MAX_STEPS,
         use_shield=True,
         use_self_healing=False,
@@ -458,11 +481,15 @@ def main() -> None:
         initial_threshold=0.50,
     )
     print_experiment_result(static_shield_result)
+    save_experiment_result(
+        static_shield_result,
+        "experiments/raw_outputs/static_shield_t05.json",
+    )
 
-    # Self-healing shield: adaptive threshold + online fine-tuning
+    # 3) Self-Healing Shield
     self_healing_result = run_experiment(
         agent_cls=AdversarialAgent,
-        n_episodes=10,
+        n_episodes=50,
         max_steps=MAX_STEPS,
         use_shield=True,
         use_self_healing=True,
@@ -470,7 +497,52 @@ def main() -> None:
         initial_threshold=0.50,
     )
     print_experiment_result(self_healing_result)
+    save_experiment_result(
+        self_healing_result,
+        "experiments/raw_outputs/self_healing.json",
+    )
 
+    # ------------------------------------------------------------------
+    # Experiment B: Threshold sensitivity for static shield
+    # ------------------------------------------------------------------
+    for threshold in [0.30, 0.50, 0.70]:
+        print(f"\nRunning static shield threshold sensitivity: threshold={threshold:.2f}")
 
+        result = run_experiment(
+            agent_cls=AdversarialAgent,
+            n_episodes=50,
+            max_steps=MAX_STEPS,
+            use_shield=True,
+            use_self_healing=False,
+            use_threshold_adaptation=False,
+            initial_threshold=threshold,
+        )
+        print_experiment_result(result)
+
+        threshold_tag = str(threshold).replace(".", "")
+        save_experiment_result(
+            result,
+            f"experiments/raw_outputs/static_shield_t{threshold_tag}.json",
+        )
+
+    # ------------------------------------------------------------------
+    # Experiment C: Long self-healing run for adaptation analysis
+    # ------------------------------------------------------------------
+    long_self_healing_result = run_experiment(
+        agent_cls=AdversarialAgent,
+        n_episodes=100,
+        max_steps=MAX_STEPS,
+        use_shield=True,
+        use_self_healing=True,
+        use_threshold_adaptation=True,
+        initial_threshold=0.50,
+    )
+    print_experiment_result(long_self_healing_result)
+    save_experiment_result(
+        long_self_healing_result,
+        "experiments/raw_outputs/self_healing_long.json",
+    )
+
+    print("\nAll experiments completed. Results saved in experiments/raw_outputs/")
 if __name__ == "__main__":
     main()

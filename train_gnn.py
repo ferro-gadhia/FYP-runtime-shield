@@ -12,7 +12,7 @@ from gnn_model import SafetyGCN
 
 DATA_PATH = "episodes.jsonl"
 BATCH_SIZE = 16
-EPOCHS = 30
+EPOCHS = 50
 LR = 1e-3
 
 def load_all_graphs(filepath: str = DATA_PATH):
@@ -24,13 +24,17 @@ def load_all_graphs(filepath: str = DATA_PATH):
             graphs.append(data)
     return graphs
 
-def split_graphs(graphs, train_ratio: float = 0.8):
+def split_graphs(graphs, train_ratio: float = 0.8, seed: int = 42):
+    import random
+
+    graphs = list(graphs)
+    rng = random.Random(seed)
+    rng.shuffle(graphs)
+
     split_idx = int(len(graphs) * train_ratio)
     train_graphs = graphs[:split_idx]
     test_graphs = graphs[split_idx:]
     return train_graphs, test_graphs
-
-
 
 def train_one_epoch(model, loader, optimizer, device):
     model.train()
@@ -47,7 +51,21 @@ def train_one_epoch(model, loader, optimizer, device):
         labels = batch.y[mask].float()
         masked_logits = logits[mask]
 
-        loss = F.binary_cross_entropy_with_logits(masked_logits, labels)
+        unsafe_count = (labels == 1).sum().item()
+        safe_count = (labels == 0).sum().item()
+
+        if unsafe_count > 0:
+            pos_weight_value = safe_count / max(unsafe_count, 1)
+        else:
+            pos_weight_value = 1.0
+
+        pos_weight = torch.tensor(pos_weight_value, dtype=torch.float32, device=device)
+
+        loss = F.binary_cross_entropy_with_logits(
+            masked_logits,
+            labels,
+            pos_weight=pos_weight,
+        )
         loss.backward()
         optimizer.step()
 
@@ -115,7 +133,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = SafetyGCN(in_channels=7, hidden_channels=32).to(device)
+    model = SafetyGCN(in_channels=13, hidden_channels=64).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
     print(f"Loaded {len(graphs)} graphs")

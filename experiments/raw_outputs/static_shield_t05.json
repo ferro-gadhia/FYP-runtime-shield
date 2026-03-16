@@ -1,0 +1,22 @@
+{
+  "agent": "AdversarialAgent",
+  "n_episodes": 50,
+  "use_shield": true,
+  "use_self_healing": false,
+  "use_threshold_adaptation": false,
+  "final_threshold": 0.5,
+  "aggregate_metrics": {
+    "total_steps": 10.0,
+    "allowed": 2.86,
+    "blocked": 7.14,
+    "unsafe_allowed": 0.0,
+    "unsafe_blocked": 5.02,
+    "safe_allowed": 2.86,
+    "safe_blocked": 2.12,
+    "accuracy": 0.7879999999999999,
+    "false_positive_rate": 0.4925873015873016,
+    "false_negative_rate": 0.0,
+    "unsafe_action_success_rate": 0.0,
+    "avg_latency_sec": 0.00019914968001103262
+  },
+  "healing_state": 
